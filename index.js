@@ -31,12 +31,17 @@ controller.hears(['(.*) / (.*)', '(.*)/(.*)', '(.*)/ (.*)', '(.*) /(.*)'], 'dire
     var documents = resp.body.documents // array
     formatDocumentsForPrintSummary(documents, function(text) { //FORMAT DOCUMENTS FOR PRINT SUMMARY PRINT
       bot.startConversation(message, function(err, convo) {
-        var message1 = text + 'please responsd with the number of the document you want to view'
+        var message1 = text + '*Please respond with the number of the document you want to view*'
         convo.ask(message1, function(response, convo) {
           var documentNumber = parseInt(response.text) // get index for document and convert to integer
-          var content = documents[documentNumber].content
-          convo.say(content)
-          convo.next()
+          if (documentNumber >= documents.length || documentNumber < 0 || typeof documentNumber != 'number') { // if index is out of bounds or not a number, repeat the question
+            convo.repeat()
+            convo.next()
+          } else { // if entered correct index for document
+            var content = documents[documentNumber].content
+            convo.say(content)
+            convo.next()
+          }
         })
       })
     })
@@ -46,7 +51,7 @@ controller.hears(['(.*) / (.*)', '(.*)/(.*)', '(.*)/ (.*)', '(.*) /(.*)'], 'dire
 function formatDocumentsForPrintSummary(docs, callback) {
   var textBlob = ''
   async.eachOf(docs, function(document, index) {
-    if (document.title) var title = document.title
+    if (document.title) var title = '_' + document.title + '_'
     if (document.summary) var summary = document.summary
     textBlob += index + ' - ' + title + '\n' + 'Summary: ' + summary + '\n' + '- - - -\n'
     if (index+1 == docs.length) callback(textBlob)
