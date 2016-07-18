@@ -23,6 +23,39 @@ var bot = controller.spawn({
 
 var questions = {askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\''}
 
+controller.hears(['(.*) / (.*)', '(.*)/(.*)', '(.*)/ (.*)', '(.*) /(.*)'], 'direct_mention', function(bot, message) {
+  var textIndex = message.match[1]
+  var query = message.match[2]
+  var data = {indexes: textIndex, text: query, print: 'all', summary: 'quick'}
+  client.call('querytextindex', data, function(err, resp, body) {
+    var documents = resp.body.documents // array
+    formatDocumentsForPrintSummary(documents, function(text) { //FORMAT DOCUMENTS FOR PRINT SUMMARY PRINT
+      bot.startConversation(message, function(err, convo) {
+        var message1 = text + 'please responsd with the number of the document you want to view'
+        convo.ask(message1, function(response, convo) {
+          var documentNumber = parseInt(response.text) // get index for document and convert to integer
+          var content = documents[documentNumber].content
+          convo.say(content)
+          convo.next()
+        })
+      })
+    })
+  })
+})
+
+function formatDocumentsForPrintSummary(docs, callback) {
+  var textBlob = ''
+  async.eachOf(docs, function(document, index) {
+    if (document.title) var title = document.title
+    if (document.summary) var summary = document.summary
+    textBlob += index + ' - ' + title + '\n' + 'Summary: ' + summary + '\n' + '- - - -\n'
+    if (index+1 == docs.length) callback(textBlob)
+  }, function(err) {
+    console.log(err)
+  })
+}
+
+
 controller.hears('summary for (.*)', 'direct_mention', function(bot, message) {
   var entityToGetInfo = message.match[1]
   var channel = message.channel
@@ -75,6 +108,8 @@ controller.hears('summary for (.*)', 'direct_mention', function(bot, message) {
   })
 
 })
+
+// Helper functions
 
 function formatTextForReply(sentimentsObj, conceptsArray, callback) {
   var finalReply = ''
