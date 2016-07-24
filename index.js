@@ -23,9 +23,10 @@ var bot = controller.spawn({
 
 var questions = {askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\''}
 
-controller.hears(['(.*) / (.*)', '(.*)/(.*)', '(.*)/ (.*)', '(.*) /(.*)'], 'direct_mention', function(bot, message) {
+controller.hears(['(.*) ; (.*)', '(.*);(.*)', '(.*); (.*)', '(.*) ;(.*)'], 'direct_mention', function(bot, message) {
   var textIndex = message.match[1]
   var query = message.match[2]
+  debugger
   var data = {indexes: textIndex, text: query, print: 'all', summary: 'quick'}
   client.call('querytextindex', data, function(err, resp, body) {
     var documents = resp.body.documents // array
@@ -59,6 +60,135 @@ function formatDocumentsForPrintSummary(docs, callback) {
     console.log(err)
   })
 }
+
+controller.hears(['update API key to (.*)', 'API key is (.*)', 'add account (.*)'], 'direct_mention', function(bot, message) {
+  var apiKey = message.match[1]
+  createHODClient(apiKey, function() {
+    console.log('Client created for ' + apiKey)
+  })
+})
+
+function createHODClient(apiKey, callback) {
+  client = new havenondemand.HODClient(apiKey)
+  callback()
+}
+
+// controller.hears(['import from Dropbox with app key (.*) and access token (.*)'], 'direct_mention', function(bot, message) {
+//   var app_key = message.match[1]
+//   var access_token = message.match[2]
+//   var indexName = 'indexname' + makeid()
+//   var data1 = {index: indexName, flavor: 'standard'}
+//   client.post('createtextindex', data1, function(err1, resp1, body1) {
+//     if (err1) {
+//       console.log(err1)
+//     } else {
+//       var data2 = {
+//         flavor: 'dropbox_cloud',
+//         connector: 'slackbotconnector' + makeid(),
+//         config: JSON.stringify({
+//           full_dropbox_access: true
+//         }),
+//         destination: JSON.stringify({
+//           action: 'addtotextindex',
+//           index: indexName,
+//         }),
+//         schedule: JSON.stringify({
+//           frequency : {frequency_type : 'seconds', interval : 21600}
+//         }),
+//         credentials: JSON.stringify({
+//           app_key: app_key,
+//           access_token: access_token
+//         })
+//       }
+//       debugger
+//       client.post('createconnector', data2, function(err2, resp2, body2) {
+//         if (err2) {
+//           console.log(err2)
+//         } else {
+//           console.log('Created connector for Dropbox')
+//         }
+//       })
+//     }
+//   })
+// })
+
+function makeid() {
+    var text = ""
+    var possible = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    for (var i=0; i < 5; i++)
+        text += possible.charAt(Math.floor(Math.random() * possible.length))
+
+    return text
+}
+
+
+controller.hears(['import from (.*)'], 'direct_mention', function(bot, message) {
+  bot.startConversation(message, function(err, convo) {
+    convo.ask('Please add a description', function(response, convo) {
+      bot.reply(message, 'Processing...')
+      var descriptionText = response.text
+      var urlWithBrackets = message.match[1]
+      var url = urlWithBrackets.substring(1, urlWithBrackets.length - 1) // strip the '<' and '>' from the url
+      var indexName = 'indexname' + makeid()
+      var connectorName = 'slackbotconnector' + makeid()
+      var data1 = {index: indexName, flavor: 'standard', description: descriptionText}
+      client.post('createtextindex', data1, function(err1, resp1, body1) {
+        if (err1) {
+          bot.reply(message, 'Oops! There was an error creating the index (the thing used to store the data) for you. Try again.')
+          console.log('Error 1: ' + err1)
+        } else {
+          console.log('Created text index ' + indexName)
+          bot.reply(message, 'Created text index ' + indexName)
+          var data2 = {
+            flavor: 'web_cloud',
+            connector: connectorName,
+            destination: descriptionText + ' for ' + indexName + ' index',
+            config: JSON.stringify({
+              url: url
+            }),
+            destination: JSON.stringify({
+              action: 'addtotextindex',
+              index: indexName,
+            }),
+            schedule: JSON.stringify({
+              frequency : {frequency_type : 'seconds', interval : 21600}
+            })
+          }
+          client.post('createconnector', data2, function(err2, resp2, body2) {
+            if (err2) {
+              bot.reply(message, 'Oops! There was an error creating the connector (the thing used to import the data) for you. Try again.')
+              console.log('Error 2: ' + err2)
+            } else {
+              console.log('Created connector for ' + url)
+              var data3 = {connector: connectorName}
+              client.post('startconnector', data3, function(err3, resp3, body3) {
+                if (err3) {
+                  bot.reply(message, 'Oops! There was an error starting the connector (the thing used to import the data) for you. Try again.')
+                  console.log('Error 3: ' + err3)
+                } else {
+                  console.log('Scheduled connector - ' + connectorName)
+                  bot.reply(message, 'Starting to import documents. To see the status of the importing, ask me "status of import <IMPORT_NAME>"')
+                }
+              })
+            }
+          })
+        }
+      })
+    })
+  })
+})
+
+controller.hears('list imports', 'direct_mention', function(bot, message) {
+  var data = {type: 'connector'}
+  client.post('listresources', data, function(err, resp, body) {
+    var privateResources = resp.body.private_resources
+    aysnc.eachOf(privateResources, function(privateResource, index) {
+
+    }, function(err) { })
+  })
+})
+
 
 
 controller.hears('summary for (.*)', 'direct_mention', function(bot, message) {
