@@ -1,6 +1,8 @@
+
 var env = process.env.NODE_ENV || 'dev'
 var path = require('path')
 require('datejs')
+var util = require('util')
 
 if (env == 'dev') {
   require('dotenv').load()
@@ -21,13 +23,11 @@ var bot = controller.spawn({
     token: process.env.SLACK_TOKEN
 }).startRTM()
 
-var questions = {askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\''}
-
 controller.hears(['(.*) ; (.*)', '(.*);(.*)', '(.*); (.*)', '(.*) ;(.*)'], 'direct_mention', function(bot, message) {
   var textIndex = message.match[1]
   var query = message.match[2]
   debugger
-  var data = {indexes: textIndex, text: query, print: 'all', summary: 'quick'}
+  var data = {indexes: textIndex, text: query, print: 'all', summary: 'quick', absolute_max_results: 10}
   client.call('querytextindex', data, function(err, resp, body) {
     var documents = resp.body.documents // array
     formatDocumentsForPrintSummary(documents, function(text) { //FORMAT DOCUMENTS FOR PRINT SUMMARY PRINT
@@ -122,28 +122,219 @@ function makeid() {
     return text
 }
 
+var questions = {
+  askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\'',
+  askForUrl: 'Tell me a URL you are importing from'
+}
+
+
+controller.hears(['configure import'], 'direct_mention', function(bot, message) {
+  var url
+  var description
+  var isUsernameAndPassword
+  var username
+  var password
+  var usernameField
+  var passwordField
+
+  askForUrl = function(response, convo) {
+    convo.ask(questions.askForUrl, function(response, convo) {
+      var urlWithBrackets = response.text
+      url = urlWithBrackets.substring(1, urlWithBrackets.length - 1) // strip the '<' and '>' from the url
+      convo.say('Great!')
+      askIfThereIsUserNameAndPassword(response, convo)
+      convo.next()
+    })
+  }
+
+  askIfThereIsUserNameAndPassword = function(response, convo) {
+      convo.ask('Is there a username and password associated with this URL?', function(response, convo) {
+        if (response.text.match(bot.utterances.yes)) { // if they said yes
+          isUsernameAndPassword = true
+          convo.say('Ok. I\'m going to need a bit more information from you.')
+          askForUsername(response, convo)
+        } else { // if they said no
+          userUsernameAndPassword = false
+          username = null
+          password = null
+          convo.say('Ok. This makes things a bit simpler :)')
+          askForDescription(response, convo)
+        }
+        convo.next()
+      })
+  }
+
+  askForUsername = function(response, convo) {
+    convo.ask('Please enter your username associated with this URL.', function(response, convo) {
+      username = response.text
+      convo.say('Awesome!')
+      askForPassword(response, convo)
+      convo.next()
+    })
+  }
+
+  askForPassword = function(response, convo) {
+    convo.ask('Please enter your password for this account. I promise I won\'t steal anything :)', function(response, convo) {
+      password = response.text
+      convo.say('Thanks!')
+      askForUsernameField(response, convo)
+      convo.next()
+    })
+  }
+
+  askForUsernameField = function(response, convo) {
+    convo.ask('Ok, this one is a bit trickier. I\'m going to need the field element of the username input. For you none web developers, this is way for the computer to know that what you write in the input field is in fact your username.\n(Using Chrome) To find this, do the following:\n1) Navigate to the login page of the URL.\n2) Right click on the input field where you type your username and scroll to the bottom where it says \'Inspect\' and click that.\n3) This will bring up the HTML of the page (aka what makes the page look like what it does). We\'re looking at the tag that saying <input ... >\n4) See where it says *\'name\'=*? Go ahead copy what that equals and send it over to me. For example, if it were to say <input name="login" type="text" class="form-control" id="login" value>, you would send over to me *login*', function(response, convo) {
+      usernameField = response.text
+      convo.say('I know that one was a bit trickier. Thanks for that!')
+      askForPasswordField(response, convo)
+      convo.next()
+    })
+  }
+
+  askForPasswordField = function(response, convo) {
+    convo.ask('Ok, this one is similar to the one before, but I\'ll go over it again. I\'m going to need the field element of the password input. For you none web developers, this is way for the computer to know that what you write in the input field is in fact your password.\n(Using Chrome) To find this, do the following:\n1) Navigate to the login page of the URL.\n2) Right click on the input field where you type your password and scroll to the bottom where it says \'Inspect\' and click that.\n3) This will bring up the HTML of the page (aka what makes the page look like what it does). We\'re looking at the tag that saying <input ... >\n4) See where it says *\'name\'=*? Go ahead copy what that equals and send it over to me. For example, if it were to say <input name="password" type="text" class="form-control" id="password" value>, you would send over to me *password*', function(response, convo) {
+      passwordField = response.text
+      convo.say('Dope. You\'re doing great!')
+      askForDescription(response, convo)
+      convo.next()
+    })
+  }
+
+  askForDescription = function(response, convo) {
+    convo.ask('Please add a description for this URL', function(response, convo) {
+      convo.say('Thanks! Let me go ahead and start importing this. I will let you know when it is completed.')
+      description = response.text
+      configureAndStartIndexConnector(bot, url, description, isUsernameAndPassword, username, password, usernameField, passwordField, function(err, params, processingDescription) {
+        if (err) deleteAll(err, params) // delete everything and say to start again
+        debugger
+        convo.say(processingDescription)
+        convo.next()
+      })
+    })
+  }
+
+  bot.startConversation(message, askForUrl)
+})
+
+function deleteAll(step, iD) {
+  client.post('deletetextindex', {index: iD}, function(err1, resp1, body1) {
+    if (err1) {
+      console.log(err1)
+    } else {
+      console.log('Deleted text index ' + iD)
+    }
+  })
+  if (step == 'connector') {
+    client.post('deleteconnector', {connector: iD}, function(err2, resp2, body2) {
+      if (err2) {
+        console.log(err2)
+      } else {
+        console.log('Deleted connector ' + iD)
+      }
+    })
+  }
+}
+
+function configureAndStartIndexConnector(bot, url, description, isUsernameAndPassword, username, password, usernameField, passwordField, callback) {
+  var id = makeid()
+  var indexName = id
+  var connectorName = id
+  var indexFlavor = 'explorer'
+  // var indexFlavor = 'standard'
+  var connectorFlavor = 'web_cloud'
+  var data1 = {index: indexName, flavor: indexFlavor, description: description}
+  debugger
+  client.post('createtextindex', data1, function(err1, resp1, body1) {
+    if (err1) {
+      console.log('Error 1:')
+      console.log(util.inspect(err1, false, null))
+      callback('index', id, 'Oops! There was an error creating the index (the thing used to store the data) for you. Try again.')
+    } else {
+      console.log('Created text index ' + indexName)
+      var data2 = {
+        flavor: connectorFlavor,
+        connector: connectorName,
+        description: description + ' for ' + indexName + ' index',
+        destination: JSON.stringify({
+          action: 'addtotextindex',
+          index: indexName,
+        }),
+        schedule: JSON.stringify({
+          // schedule: '0s',
+          frequency : {frequency_type : 'seconds', interval : 21600}
+        })
+      }
+      if (isUsernameAndPassword) { // if there is a username and password
+        data2.credentials = JSON.stringify({ // add credentials
+          login_value: username,
+          password_value: password
+        })
+        data2.config = JSON.stringify({
+          url: url,
+          login_field_value: usernameField,
+          password_field_value: passwordField
+        })
+      } else { // if there is no username
+        data2.config = JSON.stringify({
+          url: url
+        })
+      }
+      client.post('createconnector', data2, function(err2, resp2, body2) {
+        if (err2) {
+          console.log('Error 2:')
+          console.log(util.inspect(err2, false, null))
+          callback('connector', id, 'Oops! There was an error creating the connector (the thing used to import the data) for you. Try again.')
+        } else {
+          console.log('Created connector for ' + url + 'called' + connectorName)
+          var data3 = {connector: connectorName}
+          debugger
+          client.post('startconnector', data3, function(err3, resp3, body3) {
+            if (err3) {
+              console.log('Error 3:')
+              console.log(util.inspect(err3, false, null))
+              callback('connector', id, 'Oops! There was an error starting the connector (the thing used to import the data) for you. Try again.')
+            } else {
+              console.log('Scheduled connector - ' + connectorName)
+              callback(null, id, 'Starting to import documents. To see the status of the importing, ask me "status of import <IMPORT_NAME>')
+            }
+          })
+        }
+      })
+    }
+  })
+  //
+}
+
+
 
 controller.hears(['import from (.*)'], 'direct_mention', function(bot, message) {
   bot.startConversation(message, function(err, convo) {
     convo.ask('Please add a description', function(response, convo) {
+      // convo.next()
+      // convo.ask('something', function(response, convo) { console.log("asdfasdf") })
       bot.reply(message, 'Processing...')
       var descriptionText = response.text
       var urlWithBrackets = message.match[1]
       var url = urlWithBrackets.substring(1, urlWithBrackets.length - 1) // strip the '<' and '>' from the url
-      var indexName = 'indexname' + makeid()
-      var connectorName = 'slackbotconnector' + makeid()
-      var data1 = {index: indexName, flavor: 'standard', description: descriptionText}
+      var id = makeid()
+      var indexName = id
+      var connectorName = id
+      var indexFlavor = 'explorer'
+      // var indexFlavor = 'standard'
+      var connectorFlavor = 'web_cloud'
+      var data1 = {index: indexName, flavor: indexFlavor, description: descriptionText}
       client.post('createtextindex', data1, function(err1, resp1, body1) {
         if (err1) {
           bot.reply(message, 'Oops! There was an error creating the index (the thing used to store the data) for you. Try again.')
-          console.log('Error 1: ' + err1)
+          console.log('Error 1:')
+          console.log(util.inspect(err1, false, null))
         } else {
           console.log('Created text index ' + indexName)
           bot.reply(message, 'Created text index ' + indexName)
           var data2 = {
-            flavor: 'web_cloud',
+            flavor: connectorFlavor,
             connector: connectorName,
-            destination: descriptionText + ' for ' + indexName + ' index',
+            description: descriptionText + ' for ' + indexName + ' index',
             config: JSON.stringify({
               url: url
             }),
@@ -152,20 +343,23 @@ controller.hears(['import from (.*)'], 'direct_mention', function(bot, message) 
               index: indexName,
             }),
             schedule: JSON.stringify({
+              // schedule: '0s',
               frequency : {frequency_type : 'seconds', interval : 21600}
             })
           }
           client.post('createconnector', data2, function(err2, resp2, body2) {
             if (err2) {
               bot.reply(message, 'Oops! There was an error creating the connector (the thing used to import the data) for you. Try again.')
-              console.log('Error 2: ' + err2)
+              console.log('Error 2:')
+              console.log(util.inspect(err2, false, null))
             } else {
-              console.log('Created connector for ' + url)
+              console.log('Created connector for ' + url + 'called' + connectorName)
               var data3 = {connector: connectorName}
               client.post('startconnector', data3, function(err3, resp3, body3) {
                 if (err3) {
                   bot.reply(message, 'Oops! There was an error starting the connector (the thing used to import the data) for you. Try again.')
-                  console.log('Error 3: ' + err3)
+                  console.log('Error 3:')
+                    console.log(util.inspect(err3, false, null))
                 } else {
                   console.log('Scheduled connector - ' + connectorName)
                   bot.reply(message, 'Starting to import documents. To see the status of the importing, ask me "status of import <IMPORT_NAME>"')
