@@ -1,17 +1,18 @@
 
 var env = process.env.NODE_ENV || 'dev'
-var path = require('path')
-require('datejs')
-var util = require('util')
-
 if (env == 'dev') {
   require('dotenv').load()
 }
 
+require('datejs')
+var util = require('util')
 var async = require('async')
 
 var havenondemand = require('havenondemand')
-var client = new havenondemand.HODClient(process.env.HOD_APIKEY)
+var client
+if (process.env.HOD_APIKEY) {
+  client = new havenondemand.HODClient(process.env.HOD_APIKEY)
+}
 
 var Botkit = require('Botkit')
 
@@ -23,6 +24,24 @@ var bot = controller.spawn({
     token: process.env.SLACK_TOKEN
 }).startRTM()
 
+// API key
+//
+controller.hears(['update API key to (.*)', 'API key is (.*)', 'add account (.*)'], 'direct_mention', function(bot, message) {
+  var apiKey = message.match[1]
+  createHODClient(apiKey, function() {
+    console.log('Client created for ' + apiKey)
+  })
+})
+
+//Helper functions
+function createHODClient(apiKey, callback) {
+  client = new havenondemand.HODClient(apiKey)
+  callback()
+}
+
+
+// Indexing and search
+//
 controller.hears(['(.*) ; (.*)', '(.*);(.*)', '(.*); (.*)', '(.*) ;(.*)'], 'direct_mention', function(bot, message) {
   var textIndex = message.match[1]
   var query = message.match[2]
@@ -48,85 +67,6 @@ controller.hears(['(.*) ; (.*)', '(.*);(.*)', '(.*); (.*)', '(.*) ;(.*)'], 'dire
     })
   })
 })
-
-function formatDocumentsForPrintSummary(docs, callback) {
-  var textBlob = ''
-  async.eachOf(docs, function(document, index) {
-    if (document.title) var title = '_' + document.title + '_'
-    if (document.summary) var summary = document.summary
-    textBlob += index + ' - ' + title + '\n' + 'Summary: ' + summary + '\n' + '- - - -\n'
-    if (index+1 == docs.length) callback(textBlob)
-  }, function(err) {
-    console.log(err)
-  })
-}
-
-controller.hears(['update API key to (.*)', 'API key is (.*)', 'add account (.*)'], 'direct_mention', function(bot, message) {
-  var apiKey = message.match[1]
-  createHODClient(apiKey, function() {
-    console.log('Client created for ' + apiKey)
-  })
-})
-
-function createHODClient(apiKey, callback) {
-  client = new havenondemand.HODClient(apiKey)
-  callback()
-}
-
-// controller.hears(['import from Dropbox with app key (.*) and access token (.*)'], 'direct_mention', function(bot, message) {
-//   var app_key = message.match[1]
-//   var access_token = message.match[2]
-//   var indexName = 'indexname' + makeid()
-//   var data1 = {index: indexName, flavor: 'standard'}
-//   client.post('createtextindex', data1, function(err1, resp1, body1) {
-//     if (err1) {
-//       console.log(err1)
-//     } else {
-//       var data2 = {
-//         flavor: 'dropbox_cloud',
-//         connector: 'slackbotconnector' + makeid(),
-//         config: JSON.stringify({
-//           full_dropbox_access: true
-//         }),
-//         destination: JSON.stringify({
-//           action: 'addtotextindex',
-//           index: indexName,
-//         }),
-//         schedule: JSON.stringify({
-//           frequency : {frequency_type : 'seconds', interval : 21600}
-//         }),
-//         credentials: JSON.stringify({
-//           app_key: app_key,
-//           access_token: access_token
-//         })
-//       }
-//       debugger
-//       client.post('createconnector', data2, function(err2, resp2, body2) {
-//         if (err2) {
-//           console.log(err2)
-//         } else {
-//           console.log('Created connector for Dropbox')
-//         }
-//       })
-//     }
-//   })
-// })
-
-function makeid() {
-    var text = ""
-    var possible = "abcdefghijklmnopqrstuvwxyz0123456789"
-
-    for (var i=0; i < 5; i++)
-        text += possible.charAt(Math.floor(Math.random() * possible.length))
-
-    return text
-}
-
-var questions = {
-  askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\'',
-  askForUrl: 'Tell me a URL you are importing from'
-}
-
 
 controller.hears(['configure import'], 'direct_mention', function(bot, message) {
   var url
@@ -205,9 +145,9 @@ controller.hears(['configure import'], 'direct_mention', function(bot, message) 
       convo.say('Thanks! Let me go ahead and start importing this. I will let you know when it is completed.')
       description = response.text
       configureAndStartIndexConnector(bot, url, description, isUsernameAndPassword, username, password, usernameField, passwordField, function(err, params, processingDescription) {
-        if (err) deleteAll(err, params) // delete everything and say to start again
         debugger
         convo.say(processingDescription)
+        if (err) deleteAll(err, params) // delete everything and say to start again
         convo.next()
       })
     })
@@ -215,6 +155,80 @@ controller.hears(['configure import'], 'direct_mention', function(bot, message) 
 
   bot.startConversation(message, askForUrl)
 })
+
+controller.hears('list resources', 'direct_mention', function(bot, message) {
+  var privateResources
+
+  askForIndexOrConnector = function(response, convo) {
+    convo.ask('Which would you like to look at:\nSay either *imports* or *indexes*', function(response, convo) {
+      if (response.text == 'imports') {
+        var type = 'connector'
+      } else if (response.text == 'indexes') {
+        var type = 'content'
+      } else {
+        convo.say('You\'ve made a mistake! Try again.')
+        return convo.next()
+      }
+      var data = {type: type}
+      client.post('listresources', data, function(err, resp, body) {
+        privateResources = resp.body.private_resources
+        formatDocumentsForPrintResources(privateResources, function(text) {
+          convo.say(text)
+          askIfWouldLikeMoreInfoOnOne(response, convo)
+          convo.next()
+        })
+      })
+    })
+  }
+
+  askIfWouldLikeMoreInfoOnOne = function(response, convo) {
+    convo.ask('*Please respond with the number of the resource you want to view*', function(response, convo) {
+      var documentNumber = parseInt(response.text) // get index for document and convert to integer
+      if (documentNumber >= privateResources.length || documentNumber < 0 || typeof documentNumber != 'number') { // if index is out of bounds or not a number, repeat the question
+        convo.repeat()
+        convo.next()
+      } else { // if entered correct index for document
+        var resource = privateResources[documentNumber].resource
+        var type = privateResources[documentNumber].type
+        if (type == 'content') { // it's an index
+          var data = {index: resource}
+          var endpoint = 'indexstatus'
+        } else { // it's a connector
+          var data = {connector: resource}
+          var endpoint = 'connectorstatus'
+        }
+        client.post(endpoint, data, function(err, resp, body) {
+          //format it
+          if (endpoint == 'connectorstatus') { // if connector
+            if (err) {
+              var formattedText = "Name: " + resp.body.connector +"\nError: " + resp.body.error
+            } else {
+              var formattedText = "Name: " + resp.body.connector +"\nStatus: " + toLowerCase(resp.body.status) + "\nDocuments added: " + resp.body.document_counts.added  + "\nErrors: " + resp.body.document_counts.errors + "\nTime processing: " + resp.body.time_processing
+            }
+          } else { // if index
+            var formattedText = "Name: " + resource + "\nNumber of documents: " + resp.body.total_documents
+          }
+          convo.say(formattedText) //say what is formated
+          convo.next()
+        })
+      }
+    })
+  }
+
+  bot.startConversation(message, askForIndexOrConnector)
+})
+
+//Helper functions
+function formatDocumentsForPrintResources(resources, callback) {
+  var textBlob = ''
+  async.eachOf(resources, function(resource, index) {
+    textBlob += index + ' - ' + resource.resource + '\n' + 'Description: ' + resource.description + '\n' + '- - - -\n'
+    if (index+1 == resources.length) callback(textBlob)
+  }, function(err) {
+    console.log(err)
+  })
+}
+
 
 function deleteAll(step, iD) {
   client.post('deletetextindex', {index: iD}, function(err1, resp1, body1) {
@@ -233,6 +247,16 @@ function deleteAll(step, iD) {
       }
     })
   }
+}
+
+function makeid() {
+    var text = ""
+    var possible = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    for (var i=0; i < 5; i++)
+        text += possible.charAt(Math.floor(Math.random() * possible.length))
+
+    return text
 }
 
 function configureAndStartIndexConnector(bot, url, description, isUsernameAndPassword, username, password, usernameField, passwordField, callback) {
@@ -259,10 +283,10 @@ function configureAndStartIndexConnector(bot, url, description, isUsernameAndPas
           action: 'addtotextindex',
           index: indexName,
         }),
-        schedule: JSON.stringify({
-          // schedule: '0s',
-          frequency : {frequency_type : 'seconds', interval : 21600}
-        })
+        // schedule: JSON.stringify({
+        //   // schedule: '0s',
+        //   frequency : {frequency_type : 'seconds', interval : 21600}
+        // })
       }
       if (isUsernameAndPassword) { // if there is a username and password
         data2.credentials = JSON.stringify({ // add credentials
@@ -305,85 +329,24 @@ function configureAndStartIndexConnector(bot, url, description, isUsernameAndPas
   //
 }
 
-
-
-controller.hears(['import from (.*)'], 'direct_mention', function(bot, message) {
-  bot.startConversation(message, function(err, convo) {
-    convo.ask('Please add a description', function(response, convo) {
-      // convo.next()
-      // convo.ask('something', function(response, convo) { console.log("asdfasdf") })
-      bot.reply(message, 'Processing...')
-      var descriptionText = response.text
-      var urlWithBrackets = message.match[1]
-      var url = urlWithBrackets.substring(1, urlWithBrackets.length - 1) // strip the '<' and '>' from the url
-      var id = makeid()
-      var indexName = id
-      var connectorName = id
-      var indexFlavor = 'explorer'
-      // var indexFlavor = 'standard'
-      var connectorFlavor = 'web_cloud'
-      var data1 = {index: indexName, flavor: indexFlavor, description: descriptionText}
-      client.post('createtextindex', data1, function(err1, resp1, body1) {
-        if (err1) {
-          bot.reply(message, 'Oops! There was an error creating the index (the thing used to store the data) for you. Try again.')
-          console.log('Error 1:')
-          console.log(util.inspect(err1, false, null))
-        } else {
-          console.log('Created text index ' + indexName)
-          bot.reply(message, 'Created text index ' + indexName)
-          var data2 = {
-            flavor: connectorFlavor,
-            connector: connectorName,
-            description: descriptionText + ' for ' + indexName + ' index',
-            config: JSON.stringify({
-              url: url
-            }),
-            destination: JSON.stringify({
-              action: 'addtotextindex',
-              index: indexName,
-            }),
-            schedule: JSON.stringify({
-              // schedule: '0s',
-              frequency : {frequency_type : 'seconds', interval : 21600}
-            })
-          }
-          client.post('createconnector', data2, function(err2, resp2, body2) {
-            if (err2) {
-              bot.reply(message, 'Oops! There was an error creating the connector (the thing used to import the data) for you. Try again.')
-              console.log('Error 2:')
-              console.log(util.inspect(err2, false, null))
-            } else {
-              console.log('Created connector for ' + url + 'called' + connectorName)
-              var data3 = {connector: connectorName}
-              client.post('startconnector', data3, function(err3, resp3, body3) {
-                if (err3) {
-                  bot.reply(message, 'Oops! There was an error starting the connector (the thing used to import the data) for you. Try again.')
-                  console.log('Error 3:')
-                    console.log(util.inspect(err3, false, null))
-                } else {
-                  console.log('Scheduled connector - ' + connectorName)
-                  bot.reply(message, 'Starting to import documents. To see the status of the importing, ask me "status of import <IMPORT_NAME>"')
-                }
-              })
-            }
-          })
-        }
-      })
-    })
+function formatDocumentsForPrintSummary(docs, callback) {
+  var textBlob = ''
+  async.eachOf(docs, function(document, index) {
+    if (document.title) var title = '_' + document.title + '_'
+    if (document.summary) var summary = document.summary
+    textBlob += index + ' - ' + title + '\n' + 'Summary: ' + summary + '\n' + '- - - -\n'
+    if (index+1 == docs.length) callback(textBlob)
+  }, function(err) {
+    console.log(err)
   })
-})
+}
 
-controller.hears('list imports', 'direct_mention', function(bot, message) {
-  var data = {type: 'connector'}
-  client.post('listresources', data, function(err, resp, body) {
-    var privateResources = resp.body.private_resources
-    aysnc.eachOf(privateResources, function(privateResource, index) {
-
-    }, function(err) { })
-  })
-})
-
-
+// User analytics
+//
+//
+var questions = {
+  askForDates: 'Please specify the date or ranges of dates for the summary. Use MM/DD/YYYY format\nFor example, say  \'07/12/2016\' or \'07/05/2016 to 07/11/2016\''
+}
 
 controller.hears('summary for (.*)', 'direct_mention', function(bot, message) {
   var entityToGetInfo = message.match[1]
@@ -523,3 +486,45 @@ function convertDatesToUnix(dates, callback) {
   }
   return callback([fromDate, toDate, inclusive], null) // 3rd parameter is used when calling Slack API
 }
+
+// Dropbox
+//
+
+// controller.hears(['import from Dropbox with app key (.*) and access token (.*)'], 'direct_mention', function(bot, message) {
+//   var app_key = message.match[1]
+//   var access_token = message.match[2]
+//   var indexName = 'indexname' + makeid()
+//   var data1 = {index: indexName, flavor: 'standard'}
+//   client.post('createtextindex', data1, function(err1, resp1, body1) {
+//     if (err1) {
+//       console.log(err1)
+//     } else {
+//       var data2 = {
+//         flavor: 'dropbox_cloud',
+//         connector: 'slackbotconnector' + makeid(),
+//         config: JSON.stringify({
+//           full_dropbox_access: true
+//         }),
+//         destination: JSON.stringify({
+//           action: 'addtotextindex',
+//           index: indexName,
+//         }),
+//         schedule: JSON.stringify({
+//           frequency : {frequency_type : 'seconds', interval : 21600}
+//         }),
+//         credentials: JSON.stringify({
+//           app_key: app_key,
+//           access_token: access_token
+//         })
+//       }
+//       debugger
+//       client.post('createconnector', data2, function(err2, resp2, body2) {
+//         if (err2) {
+//           console.log(err2)
+//         } else {
+//           console.log('Created connector for Dropbox')
+//         }
+//       })
+//     }
+//   })
+// })
