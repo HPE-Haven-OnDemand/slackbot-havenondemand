@@ -39,32 +39,42 @@ function createHODClient(apiKey, callback) {
   callback()
 }
 
+// Helpe
+//
+controller.hears('help', 'direct_mention', function(bot, message) {
+  bot.reply(message,
+    "Here is a list of commands I can perform. Just directly mention me and I will perform them :)\n*configure import* - will help you port of documents so they can become searchable\n*list resources* - lists all the importers and indexes you have\n*<INDEX NAME> ; <QUERY>* - will search through the specified index using the query and print out the results\n*summary for <USERNAME>* - will provide a comprehensive summary of user's conversation in the chat*"
+  )
+})
 
 // Indexing and search
 //
 controller.hears(['(.*) ; (.*)', '(.*);(.*)', '(.*); (.*)', '(.*) ;(.*)'], 'direct_mention', function(bot, message) {
   var textIndex = message.match[1]
   var query = message.match[2]
-  debugger
   var data = {indexes: textIndex, text: query, print: 'all', summary: 'quick', absolute_max_results: 10}
   client.call('querytextindex', data, function(err, resp, body) {
     var documents = resp.body.documents // array
-    formatDocumentsForPrintSummary(documents, function(text) { //FORMAT DOCUMENTS FOR PRINT SUMMARY PRINT
-      bot.startConversation(message, function(err, convo) {
-        var message1 = text + '*Please respond with the number of the document you want to view*'
-        convo.ask(message1, function(response, convo) {
-          var documentNumber = parseInt(response.text) // get index for document and convert to integer
-          if (documentNumber >= documents.length || documentNumber < 0 || typeof documentNumber != 'number') { // if index is out of bounds or not a number, repeat the question
-            convo.repeat()
-            convo.next()
-          } else { // if entered correct index for document
-            var content = documents[documentNumber].content
-            convo.say(content)
-            convo.next()
-          }
+    if (documents.length > 0) {
+      formatDocumentsForPrintSummary(documents, function(text) { //FORMAT DOCUMENTS FOR PRINT SUMMARY PRINT
+        bot.startConversation(message, function(err, convo) {
+          var message1 = text + '*Please respond with the number of the document you want to view*'
+          convo.ask(message1, function(response, convo) {
+            var documentNumber = parseInt(response.text) // get index for document and convert to integer
+            if (documentNumber >= documents.length || documentNumber < 0 || typeof documentNumber != 'number') { // if index is out of bounds or not a number, repeat the question
+              convo.repeat()
+              convo.next()
+            } else { // if entered correct index for document
+              var content = documents[documentNumber].content
+              convo.say(content)
+              convo.next()
+            }
+          })
         })
       })
-    })
+    } else {
+      bot.reply(message, 'Nothing matched your query. Try again!')
+    }
   })
 })
 
@@ -78,7 +88,9 @@ controller.hears(['configure import'], 'direct_mention', function(bot, message) 
   var passwordField
 
   askForUrl = function(response, convo) {
-    convo.ask(questions.askForUrl, function(response, convo) {
+    debugger
+    convo.ask('Please provide a URL to import documents from.', function(response, convo) {
+      debugger
       var urlWithBrackets = response.text
       url = urlWithBrackets.substring(1, urlWithBrackets.length - 1) // strip the '<' and '>' from the url
       convo.say('Great!')
@@ -203,7 +215,7 @@ controller.hears('list resources', 'direct_mention', function(bot, message) {
             if (err) {
               var formattedText = "Name: " + resp.body.connector +"\nError: " + resp.body.error
             } else {
-              var formattedText = "Name: " + resp.body.connector +"\nStatus: " + toLowerCase(resp.body.status) + "\nDocuments added: " + resp.body.document_counts.added  + "\nErrors: " + resp.body.document_counts.errors + "\nTime processing: " + resp.body.time_processing
+              var formattedText = "Name: " + resp.body.connector +"\nStatus: " + resp.body.status.toLowerCase() + "\nDocuments added: " + resp.body.document_counts.added  + "\nErrors: " + resp.body.document_counts.errors + "\nTime processing: " + resp.body.time_processing
             }
           } else { // if index
             var formattedText = "Name: " + resource + "\nNumber of documents: " + resp.body.total_documents
@@ -283,10 +295,10 @@ function configureAndStartIndexConnector(bot, url, description, isUsernameAndPas
           action: 'addtotextindex',
           index: indexName,
         }),
-        // schedule: JSON.stringify({
-        //   // schedule: '0s',
-        //   frequency : {frequency_type : 'seconds', interval : 21600}
-        // })
+        schedule: JSON.stringify({
+          // schedule: '0s',
+          frequency : {frequency_type : 'seconds', interval : 21600}
+        })
       }
       if (isUsernameAndPassword) { // if there is a username and password
         data2.credentials = JSON.stringify({ // add credentials
@@ -319,7 +331,7 @@ function configureAndStartIndexConnector(bot, url, description, isUsernameAndPas
               callback('connector', id, 'Oops! There was an error starting the connector (the thing used to import the data) for you. Try again.')
             } else {
               console.log('Scheduled connector - ' + connectorName)
-              callback(null, id, 'Starting to import documents. To see the status of the importing, ask me "status of import <IMPORT_NAME>')
+              callback(null, id, 'Starting to import documents. To see the status of the importing, ask me "list resources"')
             }
           })
         }
