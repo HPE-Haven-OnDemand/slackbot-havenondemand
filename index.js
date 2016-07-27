@@ -1,4 +1,3 @@
-
 var env = process.env.NODE_ENV || 'dev'
 if (env == 'dev') {
   require('dotenv').load()
@@ -39,11 +38,11 @@ function createHODClient(apiKey, callback) {
   callback()
 }
 
-// Helpe
+// Help
 //
 controller.hears('help', 'direct_mention', function(bot, message) {
   bot.reply(message,
-    "Here is a list of commands I can perform. Just directly mention me and I will perform them :)\n*configure import* - will help you port of documents so they can become searchable\n*list resources* - lists all the importers and indexes you have\n*<INDEX NAME> ; <QUERY>* - will search through the specified index using the query and print out the results\n*summary for <USERNAME>* - will provide a comprehensive summary of user's conversation in the chat*"
+    "Here is a list of commands I can perform. Just directly mention me and I will perform them :)\n*configure import* - will help you port of documents so they can become searchable\n*list resources* - lists all the importers and indexes you have\n*<INDEX NAME> ; <QUERY>* - will search through the specified index using the query and print out the results\n*summary for <USERNAME>* - will provide a comprehensive summary of user's conversation in the chat*\n*API key is <API KEY>* will update your API key associated with Haven OnDemand, which you can find here after signedup"
   )
 })
 
