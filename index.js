@@ -8,10 +8,7 @@ var util = require('util')
 var async = require('async')
 
 var havenondemand = require('havenondemand')
-var client
-if (process.env.HOD_APIKEY) {
-  client = new havenondemand.HODClient(process.env.HOD_APIKEY)
-}
+var client = new havenondemand.HODClient(process.env.HOD_APIKEY)
 
 var Botkit = require('Botkit')
 
