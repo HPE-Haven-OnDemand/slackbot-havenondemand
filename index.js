@@ -39,7 +39,7 @@ function createHODClient(apiKey, callback) {
 //
 controller.hears('help', 'direct_mention', function(bot, message) {
   bot.reply(message,
-    "Here is a list of commands I can perform. Just directly mention me and I will perform them :)\n*configure import* - will help you port of documents so they can become searchable\n*list resources* - lists all the importers and indexes you have\n*<INDEX NAME> ; <QUERY>* - will search through the specified index using the query and print out the results\n*summary for <USERNAME>* - will provide a comprehensive summary of user's conversation in the chat*\n*API key is <API KEY>* will update your API key associated with Haven OnDemand, which you can find here after signedup"
+    "Here is a list of commands I can perform. Just directly mention me and I will perform them :)\n*configure import* - will help you port of documents so they can become searchable\n*list resources* - lists all the importers and indexes you have\n*<INDEX NAME> ; <QUERY>* - will search through the specified index using the query and print out the results\n*summary for <USERNAME>* - will provide a comprehensive summary of user's conversation in the chat*\n*API key is <API KEY>* will update your API key associated with Haven OnDemand, which you can find here after signup\n*profanity checker <STATUS>* will toggle the profanity checker - enter *on* to turn it on, *off* to turn it off, or *status* to check the status"
   )
 })
 
@@ -497,13 +497,39 @@ function convertDatesToUnix(dates, callback) {
 
 // Profanity checker
 //
+var profanityCheckerOn = true
+var profanityCheckerSubstituteOn = true
+
 controller.on('ambient', function(bot, message) {
-  var text = message.text
-  var user = message.user
-  findAndReplaceBadWords(text, function(cleanText) {
-    var replyText = "What a potty mouth you have! Maybe try saying this instead:\n*" + cleanText + "*"
-    bot.reply(message, replyText)
-  })
+  if (profanityCheckerOn) {
+    var text = message.text
+    var user = message.user
+    findAndReplaceBadWords(text, function(cleanText) {
+      var replyText = "What a potty mouth you have! Maybe try saying this instead:\n*" + cleanText + "*"
+      bot.reply(message, replyText)
+    })
+  }
+})
+
+controller.hears('profanity checker (.*)', 'direct_mention', function(bot, message) {
+  var value = message.match[1]
+  var text
+  if (value == 'on') {
+    profanityCheckerOn = true
+    text = "Profanity check as been turned " + value
+  } else if (value == 'off') {
+    profanityCheckerOn = false
+    text = "Profanity check as been turned " + value
+  } else if (value == 'status') {
+    if (profanityCheckerOn) {
+      text = 'Profanity checker is on'
+    } else {
+      text = 'Profanity checker is off'
+    }
+  } else {
+    text = "Whoops! Please enter say either *profanity checker on*, *profanity checker off*, or *profanity checker status*"
+  }
+  bot.reply(message, text)
 })
 
 // Helper functions
