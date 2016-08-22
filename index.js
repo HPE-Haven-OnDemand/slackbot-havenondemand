@@ -495,6 +495,48 @@ function convertDatesToUnix(dates, callback) {
   return callback([fromDate, toDate, inclusive], null) // 3rd parameter is used when calling Slack API
 }
 
+// Profanity checker
+//
+controller.on('ambient', function(bot, message) {
+  var text = message.text
+  var user = message.user
+  findAndReplaceBadWords(text, function(cleanText) {
+    var replyText = "What a potty mouth you have! Maybe try saying this instead:\n*" + cleanText + "*"
+    bot.reply(message, replyText)
+  })
+})
+
+// Helper functions
+function findAndReplaceBadWords(chatText, callback) {
+  var type = 'profanity,racism,slang'
+  var category = "MATCH{" + type + "}:category"
+  chatText = chatText.toLowerCase()
+  var data = {index: 'slackbotprofanities', max_results: 100, text: chatText, field_text: category, print: 'fields', print_fields: 'content,substitute'}
+  client.post('querytextindex', data, function(err, resp, body) {
+    var documents = resp.body.documents
+    var tempText = chatText.toLowerCase()
+    var documentCounter = 1
+    async.each(documents, function(doc, c) {
+      documentCounter +=1
+      var terms = JSON.parse("[" + doc.content + "]")
+      var termCounter = 1
+      async.each(terms, function(term, c) {
+        termCounter += 1
+        term = term.trim()
+        term = term.replace("/\"/", "")
+        var i = tempText.indexOf(term)
+        while (i >= 0) {
+          chatText = chatText.replace(term, doc.substitute[0])
+          i = tempText.indexOf(term, i+1)
+        }
+        if (documentCounter > documents.length && termCounter > terms.length) {
+          callback(chatText)
+        }
+      }, function(err) {console.log(err)} )
+    }, function(err) {console.log(err)} )
+  })
+}
+
 // Dropbox
 //
 
