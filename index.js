@@ -10,7 +10,7 @@ var async = require('async')
 var havenondemand = require('havenondemand')
 var client = new havenondemand.HODClient(process.env.HOD_APIKEY)
 
-var Botkit = require('Botkit')
+var Botkit = require('botkit')
 
 var controller = Botkit.slackbot({
     debug: false

@@ -4,7 +4,7 @@ Slackbot that incorporates searching through your Haven OnDemand text indexes an
 ## How to download and run
 1. Clone it to your computer
 ```
-git clone https://github.com/HPE-Haven-OnDemand/slackbot-havenondemand-search
+git clone https://github.com/HPE-Haven-OnDemand/slackbot-havenondemand
 ```
 2. Move into that directory
 ```
