@@ -1,6 +1,13 @@
 var env = process.env.NODE_ENV || 'dev'
 if (env == 'dev') {
   require('dotenv').load()
+} else {
+  var http = require('http')
+  var port = process.env.PORT
+  http.createServer(function (req, res) {
+    res.writeHead(200, {'Content-Type': 'text/plain'})
+    res.send('it is running\n')
+  }).listen(port)
 }
 
 require('datejs')
